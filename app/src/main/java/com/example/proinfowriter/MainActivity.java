@@ -100,10 +100,8 @@ public class MainActivity extends AppCompatActivity {
                 os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
                 os.writeBytes("  echo \"NOT_FOUND\"\n");
                 os.writeBytes("else\n");
-                // Rezolvovanje prave putanje umesto symlinka
-                os.writeBytes("  REAL_PATH=$(readlink -f \"$TARGET\" 2>/dev/null || echo \"$TARGET\")\n");
-                os.writeBytes("  echo \"PATH:$REAL_PATH\"\n");
-                os.writeBytes("  dd if=\"$REAL_PATH\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
+                os.writeBytes("  echo \"PATH:$TARGET\"\n");
+                os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
                 os.writeBytes("fi\n");
                 os.writeBytes("exit\n");
                 os.flush();
@@ -193,28 +191,21 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // 1. Skidanje Read-Only zaštite ako postoji na blok nivou
-                os.writeBytes("blockdev --setrw \"" + foundPartitionPath + "\" 2>/dev/null\n");
-                
-                // 2. Upis direktno u fizički block device preko strogog hex stream-a (izbegava shell escaping probleme)
-                StringBuilder hexPadded = new StringBuilder();
-                for (char c : paddedSerial.toCharArray()) {
-                    hexPadded.append(String.format("%02x", (int) c));
-                }
+                // Koristi tačan oblik komande koji uspešno radi u terminalu
+                String command = String.format("printf '%%s' '%s' | dd of='%s' bs=20 count=1 seek=0 conv=notrunc 2>/dev/null\n",
+                        paddedSerial, foundPartitionPath);
 
-                os.writeBytes("echo \"" + hexPadded.toString() + "\" | xxd -r -p | dd of=\"" + foundPartitionPath + "\" bs=20 count=1 conv=notrunc 2>/dev/null\n");
-                
-                // 3. Forsiranje sinhronizacije bafera na čip
+                os.writeBytes(command);
                 os.writeBytes("sync\n");
-                os.writeBytes("echo 3 > /proc/sys/vm/drop_caches 2>/dev/null\n");
                 os.writeBytes("exit\n");
                 os.flush();
 
                 suProcess.waitFor();
 
-                resultText.append("Serial number successfully written!\n")
-                          .append("Written text (padded to 20 bytes): [").append(paddedSerial).append("]\n\n")
-                          .append("Please click 'READ Serial' to verify change.");
+                resultText.append("Serial number successfully written!\n\n")
+                          .append("Written value: [").append(paddedSerial).append("]\n")
+                          .append("Target path: ").append(foundPartitionPath).append("\n\n")
+                          .append("Click 'READ Serial' to verify.");
 
             } catch (Exception e) {
                 resultText.append("Error writing to partition: ").append(e.getMessage());
