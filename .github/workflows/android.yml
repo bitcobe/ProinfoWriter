@@ -19,8 +19,11 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Build APK sa sistemskim Gradle-om
-      run: gradle assembleDebug
+    - name: Podešavanje Gradle-a
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Build APK
+      run: gradle assembleDebug --no-daemon
 
     - name: Sačuvaj APK kao Artifact
       uses: actions/upload-artifact@v4
