@@ -183,6 +183,11 @@ public class MainActivity extends AppCompatActivity {
         }
         String paddedSerial = sb.toString();
 
+        StringBuilder hexEscaped = new StringBuilder();
+        for (char c : paddedSerial.toCharArray()) {
+            hexEscaped.append(String.format("\\x%02x", (int) c));
+        }
+
         tvOutput.setText("Writing serial to proinfo partition...\n");
 
         new Thread(() -> {
@@ -191,9 +196,8 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Koristi tačan oblik komande koji uspešno radi u terminalu
-                String command = String.format("printf '%%s' '%s' | dd of='%s' bs=20 count=1 seek=0 conv=notrunc 2>/dev/null\n",
-                        paddedSerial, foundPartitionPath);
+                String command = String.format("echo -ne '%s' | dd of='%s' bs=20 count=1 conv=notrunc 2>/dev/null\n",
+                        hexEscaped.toString(), foundPartitionPath);
 
                 os.writeBytes(command);
                 os.writeBytes("sync\n");
