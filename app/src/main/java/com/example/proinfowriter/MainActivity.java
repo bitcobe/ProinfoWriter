@@ -56,27 +56,32 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Locate the target proinfo partition block device
+                // Pronalaženje particije i provera postojanja
                 os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
                 os.writeBytes("if [ -z \"$TARGET\" ]; then TARGET=\"/dev/block/platform/mtk-msdc.0/by-name/proinfo\"; fi\n");
                 
-                // Read raw 20 bytes and output as base64 to avoid string corruption in shell stdout
-                os.writeBytes("dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
+                os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
+                os.writeBytes("  echo \"NOT_FOUND\"\n");
+                os.writeBytes("else\n");
+                os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
+                os.writeBytes("fi\n");
                 os.writeBytes("exit\n");
                 os.flush();
 
                 BufferedReader reader = new BufferedReader(new InputStreamReader(suProcess.getInputStream()));
-                String hexLine = reader.readLine();
+                String outputLine = reader.readLine();
                 suProcess.waitFor();
 
-                if (hexLine != null && !hexLine.trim().isEmpty()) {
-                    byte[] bytes = hexStringToByteArray(hexLine.trim());
+                if (outputLine != null && outputLine.trim().equals("NOT_FOUND")) {
+                    resultText.append("Proinfo partition not found.");
+                } else if (outputLine != null && !outputLine.trim().isEmpty()) {
+                    byte[] bytes = hexStringToByteArray(outputLine.trim());
                     String rawString = new String(bytes, StandardCharsets.UTF_8);
 
-                    // Right-trim trailing spaces (0x20) and null bytes (0x00)
+                    // Uklanjanje space-ova (0x20) i null bajtova (0x00) sa desne strane
                     serialNumber = trimRight(rawString);
 
-                    // Validation: Minimum 5 characters and alphanumeric only (A-Z, a-z, 0-9)
+                    // Validacija: min 5 karaktera i samo alfanumerik (A-Z, a-z, 0-9)
                     if (serialNumber.length() >= 5 && serialNumber.matches("^[a-zA-Z0-9]+$")) {
                         isValid = true;
                         resultText.append("Valid serial number found!\n\n")
@@ -89,7 +94,7 @@ public class MainActivity extends AppCompatActivity {
                 }
 
             } catch (Exception e) {
-                resultText.append("Valid serial number not found.\nError: ").append(e.getMessage());
+                resultText.append("Error reading partition: ").append(e.getMessage());
             }
 
             final boolean enableCopy = isValid;
