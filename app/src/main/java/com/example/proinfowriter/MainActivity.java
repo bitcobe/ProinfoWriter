@@ -183,11 +183,6 @@ public class MainActivity extends AppCompatActivity {
         }
         String paddedSerial = sb.toString();
 
-        StringBuilder hexEscaped = new StringBuilder();
-        for (char c : paddedSerial.toCharArray()) {
-            hexEscaped.append(String.format("\\x%02x", (int) c));
-        }
-
         tvOutput.setText("Writing serial to proinfo partition...\n");
 
         new Thread(() -> {
@@ -196,20 +191,23 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                String command = String.format("echo -ne '%s' | dd of='%s' bs=20 count=1 conv=notrunc 2>/dev/null\n",
-                        hexEscaped.toString(), foundPartitionPath);
+                String command = "printf '%s' '" + paddedSerial + "' | dd of='" + foundPartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
 
                 os.writeBytes(command);
                 os.writeBytes("sync\n");
                 os.writeBytes("exit\n");
                 os.flush();
 
-                suProcess.waitFor();
+                int exitCode = suProcess.waitFor();
 
-                resultText.append("Serial number successfully written!\n\n")
-                          .append("Written value: [").append(paddedSerial).append("]\n")
-                          .append("Target path: ").append(foundPartitionPath).append("\n\n")
-                          .append("Click 'READ Serial' to verify.");
+                if (exitCode == 0) {
+                    resultText.append("Serial number successfully written!\n\n")
+                              .append("Written value: [").append(paddedSerial).append("]\n")
+                              .append("Target path: ").append(foundPartitionPath).append("\n\n")
+                              .append("Click 'READ Serial' to verify.");
+                } else {
+                    resultText.append("Command executed with exit code: ").append(exitCode);
+                }
 
             } catch (Exception e) {
                 resultText.append("Error writing to partition: ").append(e.getMessage());
