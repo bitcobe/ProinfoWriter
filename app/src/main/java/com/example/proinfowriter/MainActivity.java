@@ -25,7 +25,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void readProinfoPartition() {
-        tvOutput.setText("Pretražujem i čitam proinfo particiju...\n\n");
+        tvOutput.setText("Searching and reading proinfo partition...\n\n");
 
         new Thread(() -> {
             StringBuilder log = new StringBuilder();
@@ -33,22 +33,17 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Traženje direktne putanje do proinfo fajla u blok uređajima
                 os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
                 os.writeBytes("if [ -z \"$TARGET\" ]; then TARGET=\"/dev/block/platform/mtk-msdc.0/by-name/proinfo\"; fi\n");
                 
-                os.writeBytes("echo \"[+] Tražena putanja: $TARGET\"\n");
+                os.writeBytes("echo \"[+] Partition Path: $TARGET\"\n");
 
                 os.writeBytes("if [ -e \"$TARGET\" ]; then\n");
-                os.writeBytes("  echo \"[+] Particija pronađena! Čitam prvih 512 bajtova...\"\n");
-                os.writeBytes("  echo \"------------------------------------\"\n");
-                // Čitanje prvih 512 bajtova i prikaz čitljivih karaktera
-                os.writeBytes("  dd if=\"$TARGET\" bs=512 count=1 2>/dev/null | strings\n");
-                os.writeBytes("  echo \"------------------------------------\"\n");
+                os.writeBytes("  echo \"[+] First 20 bytes:\n\"\n");
+                // Read exactly 20 bytes and print printable characters
+                os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | strings\n");
                 os.writeBytes("else\n");
-                os.writeBytes("  echo \"[-] Particija nije pronađena na uobičajenim lokacijama.\"\n");
-                os.writeBytes("  echo \"Pokušavam izlistavanje svih by-name particija:\"\n");
-                os.writeBytes("  find /dev/block/ -name \"*proinfo*\" 2>/dev/null\n");
+                os.writeBytes("  echo \"[-] Partition not found.\"\n");
                 os.writeBytes("fi\n");
 
                 os.writeBytes("exit\n");
@@ -62,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
 
                 suProcess.waitFor();
             } catch (Exception e) {
-                log.append("Greška: ").append(e.getMessage());
+                log.append("Error: ").append(e.getMessage());
             }
 
             runOnUiThread(() -> tvOutput.setText(log.toString()));
