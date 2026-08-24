@@ -4,9 +4,13 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.BufferedReader;
@@ -17,8 +21,11 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends AppCompatActivity {
 
     private TextView tvOutput;
-    private Button btnCopy;
+    private Button btnCopy, btnWrite;
+    private EditText etSerialInput;
     private String serialNumber = "";
+    private String foundPartitionPath = "";
+    private boolean isPartitionLocated = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,10 +34,15 @@ public class MainActivity extends AppCompatActivity {
 
         Button btnRead = findViewById(R.id.btnRead);
         btnCopy = findViewById(R.id.btnCopy);
+        btnWrite = findViewById(R.id.btnWrite);
+        etSerialInput = findViewById(R.id.etSerialInput);
         tvOutput = findViewById(R.id.tvOutput);
 
+        // Inicijalno blokirano dugme za upis dok se ne očita particija
+        btnWrite.setEnabled(false);
+
         btnRead.setOnClickListener(v -> readProinfoPartition());
-        
+
         btnCopy.setOnClickListener(v -> {
             if (!serialNumber.isEmpty()) {
                 ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -41,56 +53,99 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+
+        // Prati unos u polju i filtrira samo dozvoljene karaktere (A-Z, a-z, 0-9) do 20 karaktera,
+        // kao i proverava uslov da prvih 5 karaktera moraju biti validni da bi se otključalo dugme WRITE.
+        etSerialInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String input = s.toString();
+                // Filtriranje da dozvoli samo slova i brojeve
+                String filtered = input.replaceAll("[^a-zA-Z0-9]", "");
+                if (!filtered.equals(input)) {
+                    etSerialInput.setText(filtered);
+                    etSerialInput.setSelection(filtered.length());
+                    return;
+                }
+
+                // Uslov za dugme WRITE: particija locirana + prvih 5 karaktera alfanumerik
+                boolean canWrite = isPartitionLocated && filtered.length() >= 5;
+                btnWrite.setEnabled(canWrite);
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+        btnWrite.setOnClickListener(v -> confirmAndWriteSerial());
     }
 
     private void readProinfoPartition() {
         tvOutput.setText("Reading proinfo partition...\n\n");
         btnCopy.setEnabled(false);
+        btnWrite.setEnabled(false);
+        isPartitionLocated = false;
         serialNumber = "";
 
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
             boolean isValid = false;
+            String detectedPath = "";
 
             try {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Pronalaženje particije i provera postojanja
                 os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
                 os.writeBytes("if [ -z \"$TARGET\" ]; then TARGET=\"/dev/block/platform/mtk-msdc.0/by-name/proinfo\"; fi\n");
                 
                 os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
                 os.writeBytes("  echo \"NOT_FOUND\"\n");
                 os.writeBytes("else\n");
+                os.writeBytes("  echo \"PATH:$TARGET\"\n");
                 os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
                 os.writeBytes("fi\n");
                 os.writeBytes("exit\n");
                 os.flush();
 
                 BufferedReader reader = new BufferedReader(new InputStreamReader(suProcess.getInputStream()));
-                String outputLine = reader.readLine();
+                String line;
+                String hexLine = null;
+
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("PATH:")) {
+                        detectedPath = line.substring(5).trim();
+                    } else if (!line.equals("NOT_FOUND") && !line.startsWith("PATH:")) {
+                        hexLine = line;
+                    }
+                }
                 suProcess.waitFor();
 
-                if (outputLine != null && outputLine.trim().equals("NOT_FOUND")) {
+                if (detectedPath.isEmpty()) {
                     resultText.append("Proinfo partition not found.");
-                } else if (outputLine != null && !outputLine.trim().isEmpty()) {
-                    byte[] bytes = hexStringToByteArray(outputLine.trim());
-                    String rawString = new String(bytes, StandardCharsets.UTF_8);
+                } else {
+                    isPartitionLocated = true;
+                    foundPartitionPath = detectedPath;
 
-                    // Uklanjanje space-ova (0x20) i null bajtova (0x00) sa desne strane
-                    serialNumber = trimRight(rawString);
+                    if (hexLine != null && !hexLine.trim().isEmpty()) {
+                        byte[] bytes = hexStringToByteArray(hexLine.trim());
+                        String rawString = new String(bytes, StandardCharsets.UTF_8);
 
-                    // Validacija: min 5 karaktera i samo alfanumerik (A-Z, a-z, 0-9)
-                    if (serialNumber.length() >= 5 && serialNumber.matches("^[a-zA-Z0-9]+$")) {
-                        isValid = true;
-                        resultText.append("Valid serial number found!\n\n")
-                                  .append("Serial Number: ").append(serialNumber);
+                        serialNumber = trimRight(rawString);
+
+                        if (serialNumber.length() >= 5 && serialNumber.matches("^[a-zA-Z0-9]+$")) {
+                            isValid = true;
+                            resultText.append("Valid serial number found!\n\n")
+                                      .append("Serial Number: ").append(serialNumber);
+                        } else {
+                            resultText.append("Valid serial number not found.");
+                        }
                     } else {
                         resultText.append("Valid serial number not found.");
                     }
-                } else {
-                    resultText.append("Valid serial number not found.");
                 }
 
             } catch (Exception e) {
@@ -98,12 +153,70 @@ public class MainActivity extends AppCompatActivity {
             }
 
             final boolean enableCopy = isValid;
+            final boolean partitionFound = isPartitionLocated;
             final String finalLog = resultText.toString();
 
             runOnUiThread(() -> {
                 tvOutput.setText(finalLog);
                 btnCopy.setEnabled(enableCopy);
+                // Omogući write samo ako je particija nađena i polje ispunjava uslov (min 5 karaktera)
+                String currentInput = etSerialInput.getText().toString();
+                btnWrite.setEnabled(partitionFound && currentInput.length() >= 5);
             });
+        }).start();
+    }
+
+    private void confirmAndWriteSerial() {
+        String inputVal = etSerialInput.getText().toString();
+
+        // Validacija: prvih 5 karaktera moraju biti slova ili brojevi
+        if (inputVal.length() < 5 || !inputVal.substring(0, 5).matches("^[a-zA-Z0-9]+$")) {
+            Toast.makeText(this, "Incorrect input! First 5 characters must be alphanumeric.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // Izbacivanje potvrde pre upisa
+        new AlertDialog.Builder(this)
+                .setTitle("Confirm Write")
+                .setMessage("Are you sure you want to write this serial number to the proinfo partition?")
+                .setPositiveButton("Yes", (dialog, which) -> writeToPartition(inputVal))
+                .setNegativeButton("No", null)
+                .show();
+    }
+
+    private void writeToPartition(String inputVal) {
+        // Dopunjavanje do 20 karaktera sa razmacima (hex 20 -> space ' ')
+        StringBuilder sb = new StringBuilder(inputVal);
+        while (sb.length() < 20) {
+            sb.append(' ');
+        }
+        String paddedSerial = sb.toString();
+
+        tvOutput.setText("Writing serial to proinfo partition...\n");
+
+        new Thread(() -> {
+            StringBuilder resultText = new StringBuilder();
+            try {
+                Process suProcess = Runtime.getRuntime().exec("su");
+                DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
+
+                // Upis tačno 20 bajtova u proinfo particiju preko echo i dd
+                os.writeBytes("printf '%s' \"" + paddedSerial + "\" | dd of=\"" + foundPartitionPath + "\" bs=20 count=1 conv=notrunc 2>/dev/null\n");
+                os.writeBytes("sync\n");
+                os.writeBytes("exit\n");
+                os.flush();
+
+                suProcess.waitFor();
+
+                resultText.append("Serial number successfully written!\n")
+                          .append("Written text (padded to 20 bytes): [").append(paddedSerial).append("]");
+
+            } catch (Exception e) {
+                resultText.append("Error writing to partition: ").append(e.getMessage());
+            }
+
+            final String finalLog = resultText.toString();
+            runOnUiThread(() -> tvOutput.setText(finalLog));
         }).start();
     }
 
