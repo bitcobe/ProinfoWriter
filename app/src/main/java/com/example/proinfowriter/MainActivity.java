@@ -18,16 +18,21 @@ import java.io.DataOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
-    private TextView tvReadStatus, tvWriteStatus;
-    private Button btnCopy, btnWrite;
+    private TextView tvReadStatus, tvWriteStatus, tvLengthDisplay;
+    private Button btnCopy, btnWrite, btnGenerate, btnMinus, btnPlus;
     private EditText etSerialInput;
     private String serialNumber = "";
     private String activePartitionPath = "";
     private boolean isPartitionLocated = false;
+
+    private int genLength = 15; // Podrazumevana dužina za generisanje (opseg 5 - 20)
+    private static final String ALPHA_NUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private final SecureRandom random = new SecureRandom();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,11 +42,17 @@ public class MainActivity extends AppCompatActivity {
         Button btnRead = findViewById(R.id.btnRead);
         btnCopy = findViewById(R.id.btnCopy);
         btnWrite = findViewById(R.id.btnWrite);
+        btnGenerate = findViewById(R.id.btnGenerate);
+        btnMinus = findViewById(R.id.btnMinus);
+        btnPlus = findViewById(R.id.btnPlus);
+        
         etSerialInput = findViewById(R.id.etSerialInput);
         tvReadStatus = findViewById(R.id.tvReadStatus);
         tvWriteStatus = findViewById(R.id.tvWriteStatus);
+        tvLengthDisplay = findViewById(R.id.tvLengthDisplay);
 
         btnWrite.setEnabled(false);
+        tvLengthDisplay.setText(String.valueOf(genLength));
 
         btnRead.setOnClickListener(v -> readProinfoPartition());
 
@@ -56,6 +67,28 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // Kontrole za izmenu dužine generisanja (5 - 20)
+        btnMinus.setOnClickListener(v -> {
+            if (genLength > 5) {
+                genLength--;
+                tvLengthDisplay.setText(String.valueOf(genLength));
+            }
+        });
+
+        btnPlus.setOnClickListener(v -> {
+            if (genLength < 20) {
+                genLength++;
+                tvLengthDisplay.setText(String.valueOf(genLength));
+            }
+        });
+
+        // Generisanje nasumičnog serijskog broja
+        btnGenerate.setOnClickListener(v -> {
+            String randomSerial = generateRandomSerial(genLength);
+            etSerialInput.setText(randomSerial);
+            etSerialInput.setSelection(randomSerial.length());
+        });
+
         etSerialInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -64,11 +97,15 @@ public class MainActivity extends AppCompatActivity {
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 String input = s.toString();
                 String filtered = input.replaceAll("[^a-zA-Z0-9]", "");
+                
                 if (!filtered.equals(input)) {
                     etSerialInput.setText(filtered);
                     etSerialInput.setSelection(filtered.length());
                     return;
                 }
+
+                // Dinamički prikaz broja karaktera u tvWriteStatus
+                tvWriteStatus.setText("Current length: " + filtered.length() + " / 20");
 
                 boolean canWrite = isPartitionLocated && filtered.length() >= 5;
                 btnWrite.setEnabled(canWrite);
@@ -79,6 +116,15 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnWrite.setOnClickListener(v -> confirmAndWriteSerial());
+    }
+
+    private String generateRandomSerial(int length) {
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            int index = random.nextInt(ALPHA_NUMERIC.length());
+            sb.append(ALPHA_NUMERIC.charAt(index));
+        }
+        return sb.toString();
     }
 
     private void readProinfoPartition() {
@@ -97,7 +143,6 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Uzimamo prvu liniju koju find izbaci
                 os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
                 os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
                 os.writeBytes("  echo \"NOT_FOUND\"\n");
@@ -208,8 +253,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (exitCode == 0) {
                     resultText.append("Write command executed successfully!\n")
-                              .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]\n")
-                              .append("Click 'READ Serial' to verify.");
+                              .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]");
                 } else {
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(suProcess.getErrorStream()));
                     StringBuilder errLog = new StringBuilder();
