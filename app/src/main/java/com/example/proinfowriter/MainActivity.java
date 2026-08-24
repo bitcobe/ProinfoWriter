@@ -24,7 +24,9 @@ public class MainActivity extends AppCompatActivity {
     private Button btnCopy, btnWrite;
     private EditText etSerialInput;
     private String serialNumber = "";
-    private String foundPartitionPath = "";
+    // Fiksirana primarna putanja koju terminal garantovano koristi
+    private final String targetPartitionPath = "/dev/block/platform/mtk-msdc.0/by-name/proinfo";
+    private String activePartitionPath = "";
     private boolean isPartitionLocated = false;
 
     @Override
@@ -94,14 +96,18 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
-                os.writeBytes("if [ -z \"$TARGET\" ]; then TARGET=\"/dev/block/platform/mtk-msdc.0/by-name/proinfo\"; fi\n");
-                
-                os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
-                os.writeBytes("  echo \"NOT_FOUND\"\n");
+                // Proveravamo prvo tačnu mtk-msdc.0 putanju, a ako ne postoji onda tražimo fallback
+                os.writeBytes("if [ -e \"" + targetPartitionPath + "\" ]; then\n");
+                os.writeBytes("  echo \"PATH:" + targetPartitionPath + "\"\n");
+                os.writeBytes("  dd if=\"" + targetPartitionPath + "\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
                 os.writeBytes("else\n");
-                os.writeBytes("  echo \"PATH:$TARGET\"\n");
-                os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
+                os.writeBytes("  TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
+                os.writeBytes("  if [ -n \"$TARGET\" ]; then\n");
+                os.writeBytes("    echo \"PATH:$TARGET\"\n");
+                os.writeBytes("    dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
+                os.writeBytes("  else\n");
+                os.writeBytes("    echo \"NOT_FOUND\"\n");
+                os.writeBytes("  fi\n");
                 os.writeBytes("fi\n");
                 os.writeBytes("exit\n");
                 os.flush();
@@ -120,10 +126,12 @@ public class MainActivity extends AppCompatActivity {
                 suProcess.waitFor();
 
                 if (detectedPath.isEmpty()) {
-                    resultText.append("Proinfo partition not found.");
+                    resultText.append("Proinfo partition not found on device.");
                 } else {
                     isPartitionLocated = true;
-                    foundPartitionPath = detectedPath;
+                    activePartitionPath = detectedPath;
+
+                    resultText.append("Partition Path:\n").append(activePartitionPath).append("\n\n");
 
                     if (hexLine != null && !hexLine.trim().isEmpty()) {
                         byte[] bytes = hexStringToByteArray(hexLine.trim());
@@ -133,13 +141,14 @@ public class MainActivity extends AppCompatActivity {
 
                         if (serialNumber.length() >= 5 && serialNumber.matches("^[a-zA-Z0-9]+$")) {
                             isValid = true;
-                            resultText.append("Valid serial number found!\n\n")
+                            resultText.append("Valid serial number found!\n")
                                       .append("Serial Number: ").append(serialNumber);
                         } else {
-                            resultText.append("Valid serial number not found.");
+                            resultText.append("Raw Hex: ").append(hexLine.trim()).append("\n")
+                                      .append("Valid serial number not found.");
                         }
                     } else {
-                        resultText.append("Valid serial number not found.");
+                        resultText.append("Valid serial number not found (Empty response).");
                     }
                 }
 
@@ -170,7 +179,7 @@ public class MainActivity extends AppCompatActivity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Confirm Write")
-                .setMessage("Are you sure you want to write this serial number to the proinfo partition?")
+                .setMessage("Are you sure you want to write to:\n" + activePartitionPath + "?")
                 .setPositiveButton("Yes", (dialog, which) -> writeToPartition(inputVal))
                 .setNegativeButton("No", null)
                 .show();
@@ -183,7 +192,7 @@ public class MainActivity extends AppCompatActivity {
         }
         String paddedSerial = sb.toString();
 
-        tvOutput.setText("Writing serial to proinfo partition...\n");
+        tvOutput.setText("Writing to partition:\n" + activePartitionPath + "...\n\n");
 
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
@@ -191,7 +200,8 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                String command = "printf '%s' '" + paddedSerial + "' | dd of='" + foundPartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
+                // Tačna komanda iz terminala preko printf %s
+                String command = "printf '%s' '" + paddedSerial + "' | dd of='" + activePartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
 
                 os.writeBytes(command);
                 os.writeBytes("sync\n");
@@ -201,12 +211,12 @@ public class MainActivity extends AppCompatActivity {
                 int exitCode = suProcess.waitFor();
 
                 if (exitCode == 0) {
-                    resultText.append("Serial number successfully written!\n\n")
-                              .append("Written value: [").append(paddedSerial).append("]\n")
-                              .append("Target path: ").append(foundPartitionPath).append("\n\n")
+                    resultText.append("Write command executed successfully!\n\n")
+                              .append("Target Path: ").append(activePartitionPath).append("\n")
+                              .append("Written Value: [").append(paddedSerial).append("]\n\n")
                               .append("Click 'READ Serial' to verify.");
                 } else {
-                    resultText.append("Command executed with exit code: ").append(exitCode);
+                    resultText.append("Execution failed with exit code: ").append(exitCode);
                 }
 
             } catch (Exception e) {
