@@ -9,7 +9,7 @@
         android:id="@+id/btnRead"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="READ PROINFO" />
+        android:text="READ Serial" />
 
     <LinearLayout
         android:layout_width="match_parent"
