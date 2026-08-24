@@ -99,11 +99,11 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // 1. Provera univerzalne putanje uvek na prvom mestu
+                // 1. Provera univerzalne putanje
                 os.writeBytes("if [ -e \"" + UNIVERSAL_MTK_PATH + "\" ]; then\n");
                 os.writeBytes("  TARGET=\"" + UNIVERSAL_MTK_PATH + "\"\n");
                 os.writeBytes("else\n");
-                // 2. Fallback na dinamičku pretragu ako univerzalna ne postoji
+                // 2. Fallback dinamička pretraga sortirana po dužini linije
                 os.writeBytes("  TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | awk '{ print length, $0 }' | sort -n | cut -d\" \" -f2- | head -n 1)\n");
                 os.writeBytes("fi\n");
 
@@ -190,9 +190,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void writeToPartition(String inputVal) {
-        // Priprema tačno 20 bajtova u Java memoriji (dopunjava sa 0x20 - razmak)
+        // Priprema tačno 20 bajtova u Java memoriji (popunjava sa 0x20 - razmak)
         byte[] buffer = new byte[20];
-        Arrays.fill(buffer, (byte) 0x20); // Popunjava sve bajtove razmacima
+        Arrays.fill(buffer, (byte) 0x20);
 
         byte[] inputBytes = inputVal.getBytes(StandardCharsets.UTF_8);
         int copyLength = Math.min(inputBytes.length, 20);
@@ -203,20 +203,20 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
             try {
-                // Pokrećemo dd komandu koja očekuje ulaz direktno sa standardnog ulaza (stdin)
-                String ddCommand = "dd of='" + activePartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
+                // Uklonjena 'conv=notrunc' opcija koja pravi problem na siromašnijim dd build-ovima
+                String ddCommand = "dd of='" + activePartitionPath + "' bs=20 count=1 seek=0\n";
                 
                 Process suProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", ddCommand});
                 OutputStream os = suProcess.getOutputStream();
 
-                // Direktan upis binarnog bufera od 20 bajtova direktno u dd proces
+                // Direktan upis binarnog bufera od 20 bajtova u stdin komande dd
                 os.write(buffer);
                 os.flush();
                 os.close();
 
                 int exitCode = suProcess.waitFor();
 
-                // Dodatno okidamo sync komandu preko root-a za siguran upis na fleš memoriju
+                // Sinhronizacija memorije na fleš čip
                 Process syncProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", "sync"});
                 syncProcess.waitFor();
 
@@ -226,7 +226,6 @@ public class MainActivity extends AppCompatActivity {
                               .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]\n\n")
                               .append("Click 'READ Serial' to verify.");
                 } else {
-                    // Čitamo error stream u slučaju greške
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(suProcess.getErrorStream()));
                     StringBuilder errLog = new StringBuilder();
                     String errLine;
