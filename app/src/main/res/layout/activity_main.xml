@@ -1,72 +1,94 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:padding="16dp">
 
-    <!-- GORNJI DEO: Čitanje -->
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="--- READ SECTION ---"
-        android:textStyle="bold"
-        android:textSize="16sp" />
+        android:orientation="vertical">
 
-    <Button
-        android:id="@+id/btnRead"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="READ Serial"
-        android:layout_marginTop="8dp" />
+        <!-- DUGME ZA ČITANJE PARTICIONALNOG SERIJSKOG BROJA -->
+        <Button
+            android:id="@+id/btnRead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="READ Serial" />
 
-    <Button
-        android:id="@+id/btnCopy"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="COPY"
-        android:enabled="false"
-        android:layout_marginTop="8dp" />
+        <!-- DUGME ZA KOPIRANJE PROČITANOG SERIJSKOG BROJA -->
+        <Button
+            android:id="@+id/btnCopy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="Copy Serial to Clipboard" />
 
-    <!-- DONJI DEO: Upis -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="--- WRITE SECTION ---"
-        android:textStyle="bold"
-        android:textSize="16sp"
-        android:layout_marginTop="24dp" />
+        <!-- POLJE ZA UNOS NOVOG SERIJSKOG BROJA -->
+        <EditText
+            android:id="@+id/etSerialInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Enter new Serial Number"
+            android:inputType="textNoSuggestions"
+            android:maxLength="20" />
 
-    <EditText
-        android:id="@+id/etSerialInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Enter serial (max 20 chars)"
-        android:inputType="textNoSuggestions"
-        android:maxLength="20"
-        android:layout_marginTop="8dp" />
+        <!-- DUGME ZA UPISIVANJE -->
+        <Button
+            android:id="@+id/btnWrite"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="WRITE Serial to Partition" />
 
-    <Button
-        android:id="@+id/btnWrite"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="WRITE Serial"
-        android:enabled="false"
-        android:layout_marginTop="8dp" />
-
-    <!-- LOG / STATUS -->
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="16dp">
-
+        <!-- TEKSTUALNI PRIKAZ STATUSARef / ISPISA -->
         <TextView
             android:id="@+id/tvOutput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Status: Waiting for command..."
-            android:textSize="14sp"
-            android:typeface="monospace" />
-    </ScrollView>
+            android:layout_marginTop="16dp"
+            android:padding="8dp"
+            android:text="Status information will appear here..."
+            android:textSize="14sp" />
 
-</LinearLayout>
+        <!-- RAZDELNIK / LINIJA SEPARACIJE -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="24dp"
+            android:background="#CCCCCC" />
+
+        <!-- PRIVREMENI DEO ZA DIJAGNOSTIKU I SKENIRANJE SVIH PUTANJA -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Diagnostic Tooling (Temporary)"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnScanAll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="SCAN ALL PROINFO PATHS" />
+
+        <Button
+            android:id="@+id/btnCopyDebug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="COPY ALL PATHS" />
+
+        <TextView
+            android:id="@+id/tvDebugAllPaths"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:text="Debug output will appear here..."
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>
