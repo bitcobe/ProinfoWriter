@@ -5,26 +5,56 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <!-- GORNJI DEO: Čitanje -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="--- READ SECTION ---"
+        android:textStyle="bold"
+        android:textSize="16sp" />
+
     <Button
         android:id="@+id/btnRead"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="READ Serial" />
+        android:text="READ Serial"
+        android:layout_marginTop="8dp" />
 
-    <LinearLayout
+    <Button
+        android:id="@+id/btnCopy"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="COPY"
+        android:enabled="false"
+        android:layout_marginTop="8dp" />
+
+    <!-- DONJI DEO: Upis -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="16dp">
+        android:text="--- WRITE SECTION ---"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:layout_marginTop="24dp" />
 
-        <Button
-            android:id="@+id/btnCopy"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="COPY"
-            android:enabled="false" />
-    </LinearLayout>
+    <EditText
+        android:id="@+id/etSerialInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter serial (max 20 chars)"
+        android:inputType="textNoSuggestions"
+        android:maxLength="20"
+        android:layout_marginTop="8dp" />
 
+    <Button
+        android:id="@+id/btnWrite"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="WRITE Serial"
+        android:enabled="false"
+        android:layout_marginTop="8dp" />
+
+    <!-- LOG / STATUS -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
