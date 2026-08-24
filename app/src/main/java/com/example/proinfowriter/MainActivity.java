@@ -22,15 +22,12 @@ import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
-    private TextView tvOutput;
+    private TextView tvReadStatus, tvWriteStatus;
     private Button btnCopy, btnWrite;
     private EditText etSerialInput;
     private String serialNumber = "";
     private String activePartitionPath = "";
     private boolean isPartitionLocated = false;
-
-    // Univerzalna primarna putanja za MediaTek
-    private static final String UNIVERSAL_MTK_PATH = "/dev/block/platform/mtk-msdc.0/by-name/proinfo";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,7 +38,8 @@ public class MainActivity extends AppCompatActivity {
         btnCopy = findViewById(R.id.btnCopy);
         btnWrite = findViewById(R.id.btnWrite);
         etSerialInput = findViewById(R.id.etSerialInput);
-        tvOutput = findViewById(R.id.tvOutput);
+        tvReadStatus = findViewById(R.id.tvReadStatus);
+        tvWriteStatus = findViewById(R.id.tvWriteStatus);
 
         btnWrite.setEnabled(false);
 
@@ -84,7 +82,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void readProinfoPartition() {
-        tvOutput.setText("Reading proinfo partition...\n\n");
+        tvReadStatus.setText("Reading proinfo partition...");
         btnCopy.setEnabled(false);
         btnWrite.setEnabled(false);
         isPartitionLocated = false;
@@ -99,14 +97,8 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // 1. Provera univerzalne putanje
-                os.writeBytes("if [ -e \"" + UNIVERSAL_MTK_PATH + "\" ]; then\n");
-                os.writeBytes("  TARGET=\"" + UNIVERSAL_MTK_PATH + "\"\n");
-                os.writeBytes("else\n");
-                // 2. Fallback dinamička pretraga sortirana po dužini linije
-                os.writeBytes("  TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | awk '{ print length, $0 }' | sort -n | cut -d\" \" -f2- | head -n 1)\n");
-                os.writeBytes("fi\n");
-
+                // Uzimamo prvu liniju koju find izbaci
+                os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
                 os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
                 os.writeBytes("  echo \"NOT_FOUND\"\n");
                 os.writeBytes("else\n");
@@ -135,8 +127,6 @@ public class MainActivity extends AppCompatActivity {
                     isPartitionLocated = true;
                     activePartitionPath = detectedPath;
 
-                    resultText.append("Active Path:\n").append(activePartitionPath).append("\n\n");
-
                     if (hexLine != null && !hexLine.trim().isEmpty()) {
                         byte[] bytes = hexStringToByteArray(hexLine.trim());
                         String rawString = new String(bytes, StandardCharsets.UTF_8);
@@ -148,8 +138,8 @@ public class MainActivity extends AppCompatActivity {
                             resultText.append("Valid serial number found!\n")
                                       .append("Serial Number: ").append(serialNumber);
                         } else {
-                            resultText.append("Raw Hex: ").append(hexLine.trim()).append("\n")
-                                      .append("Valid serial number not found.");
+                            resultText.append("Valid serial number not found.\n")
+                                      .append("Raw Hex: ").append(hexLine.trim());
                         }
                     } else {
                         resultText.append("Valid serial number not found (Empty response).");
@@ -165,7 +155,7 @@ public class MainActivity extends AppCompatActivity {
             final String finalLog = resultText.toString();
 
             runOnUiThread(() -> {
-                tvOutput.setText(finalLog);
+                tvReadStatus.setText(finalLog);
                 btnCopy.setEnabled(enableCopy);
                 String currentInput = etSerialInput.getText().toString();
                 btnWrite.setEnabled(partitionFound && currentInput.length() >= 5);
@@ -183,14 +173,13 @@ public class MainActivity extends AppCompatActivity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Confirm Write")
-                .setMessage("Are you sure you want to write to:\n" + activePartitionPath + "?")
+                .setMessage("Are you sure you want to write new serial number?")
                 .setPositiveButton("Yes", (dialog, which) -> writeToPartition(inputVal))
                 .setNegativeButton("No", null)
                 .show();
     }
 
     private void writeToPartition(String inputVal) {
-        // Priprema tačno 20 bajtova u Java memoriji (popunjava sa 0x20 - razmak)
         byte[] buffer = new byte[20];
         Arrays.fill(buffer, (byte) 0x20);
 
@@ -198,32 +187,28 @@ public class MainActivity extends AppCompatActivity {
         int copyLength = Math.min(inputBytes.length, 20);
         System.arraycopy(inputBytes, 0, buffer, 0, copyLength);
 
-        tvOutput.setText("Writing to partition:\n" + activePartitionPath + "...\n\n");
+        tvWriteStatus.setText("Writing to partition...");
 
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
             try {
-                // Uklonjena 'conv=notrunc' opcija koja pravi problem na siromašnijim dd build-ovima
                 String ddCommand = "dd of='" + activePartitionPath + "' bs=20 count=1 seek=0\n";
                 
                 Process suProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", ddCommand});
                 OutputStream os = suProcess.getOutputStream();
 
-                // Direktan upis binarnog bufera od 20 bajtova u stdin komande dd
                 os.write(buffer);
                 os.flush();
                 os.close();
 
                 int exitCode = suProcess.waitFor();
 
-                // Sinhronizacija memorije na fleš čip
                 Process syncProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", "sync"});
                 syncProcess.waitFor();
 
                 if (exitCode == 0) {
-                    resultText.append("Write command executed successfully!\n\n")
-                              .append("Target Path: ").append(activePartitionPath).append("\n")
-                              .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]\n\n")
+                    resultText.append("Write command executed successfully!\n")
+                              .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]\n")
                               .append("Click 'READ Serial' to verify.");
                 } else {
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(suProcess.getErrorStream()));
@@ -240,7 +225,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             final String finalLog = resultText.toString();
-            runOnUiThread(() -> tvOutput.setText(finalLog));
+            runOnUiThread(() -> tvWriteStatus.setText(finalLog));
         }).start();
     }
 
