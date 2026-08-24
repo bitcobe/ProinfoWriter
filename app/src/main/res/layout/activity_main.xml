@@ -20,7 +20,7 @@
             android:id="@+id/tvOutput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Status: Čekam komandu..."
+            android:text="Status: Waiting for command..."
             android:textSize="14sp"
             android:typeface="monospace" />
     </ScrollView>
