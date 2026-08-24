@@ -16,17 +16,21 @@ import androidx.appcompat.app.AppCompatActivity;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
-    private TextView tvOutput, tvDebugAllPaths;
-    private Button btnCopy, btnWrite, btnScanAll, btnCopyDebug;
+    private TextView tvOutput;
+    private Button btnCopy, btnWrite;
     private EditText etSerialInput;
     private String serialNumber = "";
     private String activePartitionPath = "";
-    private String debugAllPathsText = "";
     private boolean isPartitionLocated = false;
+
+    // Univerzalna primarna putanja za MediaTek
+    private static final String UNIVERSAL_MTK_PATH = "/dev/block/platform/mtk-msdc.0/by-name/proinfo";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,24 +42,6 @@ public class MainActivity extends AppCompatActivity {
         btnWrite = findViewById(R.id.btnWrite);
         etSerialInput = findViewById(R.id.etSerialInput);
         tvOutput = findViewById(R.id.tvOutput);
-
-        // --- PRIVREMENI DEO ZA DIJAGNOSTIKU ---
-        btnScanAll = findViewById(R.id.btnScanAll); // Dodaj ovo dugme u XML (ili zameni listener)
-        btnCopyDebug = findViewById(R.id.btnCopyDebug); // Dodaj ovo dugme u XML (ili zameni listener)
-        tvDebugAllPaths = findViewById(R.id.tvDebugAllPaths); // Dodaj TextView u XML za prikaz svih putanja
-
-        btnScanAll.setOnClickListener(v -> scanAllProinfoPartitions());
-        btnCopyDebug.setOnClickListener(v -> {
-            if (!debugAllPathsText.isEmpty()) {
-                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clip = ClipData.newPlainText("All Proinfo Paths", debugAllPathsText);
-                if (clipboard != null) {
-                    clipboard.setPrimaryClip(clip);
-                    Toast.makeText(this, "Copied all paths to clipboard!", Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-        // --------------------------------------
 
         btnWrite.setEnabled(false);
 
@@ -113,9 +99,14 @@ public class MainActivity extends AppCompatActivity {
                 Process suProcess = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
 
-                // Koristi find za univerzalnost
-                os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
-                os.writeBytes("if [ -z \"$TARGET\" ]; then TARGET=\"/dev/block/platform/mtk-msdc.0/by-name/proinfo\"; fi\n");
+                // 1. Provera univerzalne putanje uvek na prvom mestu
+                os.writeBytes("if [ -e \"" + UNIVERSAL_MTK_PATH + "\" ]; then\n");
+                os.writeBytes("  TARGET=\"" + UNIVERSAL_MTK_PATH + "\"\n");
+                os.writeBytes("else\n");
+                // 2. Fallback na dinamičku pretragu ako univerzalna ne postoji
+                os.writeBytes("  TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | awk '{ print length, $0 }' | sort -n | cut -d\" \" -f2- | head -n 1)\n");
+                os.writeBytes("fi\n");
+
                 os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
                 os.writeBytes("  echo \"NOT_FOUND\"\n");
                 os.writeBytes("else\n");
@@ -199,36 +190,50 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void writeToPartition(String inputVal) {
-        StringBuilder sb = new StringBuilder(inputVal);
-        while (sb.length() < 20) {
-            sb.append(' ');
-        }
-        String paddedSerial = sb.toString();
+        // Priprema tačno 20 bajtova u Java memoriji (dopunjava sa 0x20 - razmak)
+        byte[] buffer = new byte[20];
+        Arrays.fill(buffer, (byte) 0x20); // Popunjava sve bajtove razmacima
+
+        byte[] inputBytes = inputVal.getBytes(StandardCharsets.UTF_8);
+        int copyLength = Math.min(inputBytes.length, 20);
+        System.arraycopy(inputBytes, 0, buffer, 0, copyLength);
 
         tvOutput.setText("Writing to partition:\n" + activePartitionPath + "...\n\n");
 
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
             try {
-                Process suProcess = Runtime.getRuntime().exec("su");
-                DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
+                // Pokrećemo dd komandu koja očekuje ulaz direktno sa standardnog ulaza (stdin)
+                String ddCommand = "dd of='" + activePartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
+                
+                Process suProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", ddCommand});
+                OutputStream os = suProcess.getOutputStream();
 
-                String command = "printf '%s' '" + paddedSerial + "' | dd of='" + activePartitionPath + "' bs=20 count=1 seek=0 conv=notrunc\n";
-
-                os.writeBytes(command);
-                os.writeBytes("sync\n");
-                os.writeBytes("exit\n");
+                // Direktan upis binarnog bufera od 20 bajtova direktno u dd proces
+                os.write(buffer);
                 os.flush();
+                os.close();
 
                 int exitCode = suProcess.waitFor();
+
+                // Dodatno okidamo sync komandu preko root-a za siguran upis na fleš memoriju
+                Process syncProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", "sync"});
+                syncProcess.waitFor();
 
                 if (exitCode == 0) {
                     resultText.append("Write command executed successfully!\n\n")
                               .append("Target Path: ").append(activePartitionPath).append("\n")
-                              .append("Written Value: [").append(paddedSerial).append("]\n\n")
+                              .append("Written String: [").append(new String(buffer, StandardCharsets.UTF_8)).append("]\n\n")
                               .append("Click 'READ Serial' to verify.");
                 } else {
-                    resultText.append("Execution failed with exit code: ").append(exitCode);
+                    // Čitamo error stream u slučaju greške
+                    BufferedReader errReader = new BufferedReader(new InputStreamReader(suProcess.getErrorStream()));
+                    StringBuilder errLog = new StringBuilder();
+                    String errLine;
+                    while ((errLine = errReader.readLine()) != null) {
+                        errLog.append(errLine).append("\n");
+                    }
+                    resultText.append("Execution failed (code ").append(exitCode).append("):\n").append(errLog);
                 }
 
             } catch (Exception e) {
@@ -237,50 +242,6 @@ public class MainActivity extends AppCompatActivity {
 
             final String finalLog = resultText.toString();
             runOnUiThread(() -> tvOutput.setText(finalLog));
-        }).start();
-    }
-
-    // ==========================================
-    // PRIVREMENA DIJAGNOSTIČKA METODA ZA SKENIRANJE
-    // ==========================================
-    private void scanAllProinfoPartitions() {
-        tvDebugAllPaths.setText("Scanning all proinfo partitions in /dev/block/...\n");
-        debugAllPathsText = "";
-
-        new Thread(() -> {
-            StringBuilder allPathsBuilder = new StringBuilder();
-            try {
-                Process suProcess = Runtime.getRuntime().exec("su");
-                DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
-
-                // Pronalazi sve symlinkove i fajlove pod imenom proinfo
-                os.writeBytes("find /dev/block/ -name proinfo 2>/dev/null\n");
-                os.writeBytes("exit\n");
-                os.flush();
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(suProcess.getInputStream()));
-                String line;
-
-                while ((line = reader.readLine()) != null) {
-                    if (!line.trim().isEmpty()) {
-                        allPathsBuilder.append(line.trim()).append("\n");
-                    }
-                }
-                suProcess.waitFor();
-
-            } catch (Exception e) {
-                allPathsBuilder.append("Scan Error: ").append(e.getMessage());
-            }
-
-            debugAllPathsText = allPathsBuilder.toString().trim();
-
-            runOnUiThread(() -> {
-                if (debugAllPathsText.isEmpty()) {
-                    tvDebugAllPaths.setText("No proinfo partitions found via find!");
-                } else {
-                    tvDebugAllPaths.setText("Found Paths:\n" + debugAllPathsText);
-                }
-            });
         }).start();
     }
 
