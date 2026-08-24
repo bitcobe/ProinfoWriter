@@ -19,13 +19,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Podešavanje Gradle-a
-      uses: gradle/actions/setup-gradle@v3
+    - name: Podešavanje Android SDK
+      uses: android-actions/setup-android@v3
 
-    - name: Build APK
+    - name: Build APK sa Gradle-om
       run: gradle assembleDebug --no-daemon
 
-    - name: Sačuvaj APK kao Artifact
+    - name: Sačuvaj APK ako je uspesan
       uses: actions/upload-artifact@v4
       with:
         name: ProinfoWriter-APK
