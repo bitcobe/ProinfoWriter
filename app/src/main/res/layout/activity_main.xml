@@ -9,11 +9,22 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <!-- DEO ZA ČITANJE -->
         <Button
             android:id="@+id/btnRead"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="READ Serial" />
+
+        <TextView
+            android:id="@+id/tvReadStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:padding="8dp"
+            android:text="Read status will appear here..."
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/btnCopy"
@@ -22,11 +33,19 @@
             android:enabled="false"
             android:text="Copy Serial to Clipboard" />
 
+        <!-- LINIJA RAZDVAJANJA -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="20dp"
+            android:background="#CCCCCC" />
+
+        <!-- DEO ZA PISANJE -->
         <EditText
             android:id="@+id/etSerialInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:hint="Enter new Serial Number"
             android:inputType="textNoSuggestions"
             android:maxLength="20" />
@@ -35,16 +54,17 @@
             android:id="@+id/btnWrite"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:enabled="false"
-            android:text="WRITE Serial to Partition" />
+            android:text="WRITE Serial" />
 
         <TextView
-            android:id="@+id/tvOutput"
+            android:id="@+id/tvWriteStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             android:padding="8dp"
-            android:text="Status information will appear here..."
+            android:text="Write status will appear here..."
             android:textSize="14sp" />
 
     </LinearLayout>
