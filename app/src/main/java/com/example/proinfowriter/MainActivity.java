@@ -14,7 +14,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +30,7 @@ public class MainActivity extends AppCompatActivity {
     private String activePartitionPath = "";
     private boolean isPartitionLocated = false;
 
-    private int genLength = 15; // Podrazumevana dužina za generisanje (opseg 5 - 20)
+    private int genLength = 15; // Podrazumevana dužina za generisanje (5 - 20)
     private static final String ALPHA_NUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private final SecureRandom random = new SecureRandom();
 
@@ -45,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
         btnGenerate = findViewById(R.id.btnGenerate);
         btnMinus = findViewById(R.id.btnMinus);
         btnPlus = findViewById(R.id.btnPlus);
-        
+
         etSerialInput = findViewById(R.id.etSerialInput);
         tvReadStatus = findViewById(R.id.tvReadStatus);
         tvWriteStatus = findViewById(R.id.tvWriteStatus);
@@ -97,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 String input = s.toString();
                 String filtered = input.replaceAll("[^a-zA-Z0-9]", "");
-                
+
                 if (!filtered.equals(input)) {
                     etSerialInput.setText(filtered);
                     etSerialInput.setSelection(filtered.length());
@@ -137,45 +137,34 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             StringBuilder resultText = new StringBuilder();
             boolean isValid = false;
-            String detectedPath = "";
 
             try {
-                Process suProcess = Runtime.getRuntime().exec("su");
-                DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
+                // 1. Pronalaženje prve putanje (kompatibilno sa Android 5.1+)
+                Process findProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", "find /dev/block/ -name proinfo 2>/dev/null | head -n 1"});
+                BufferedReader pathReader = new BufferedReader(new InputStreamReader(findProcess.getInputStream()));
+                String detectedPath = pathReader.readLine();
+                findProcess.waitFor();
 
-                os.writeBytes("TARGET=$(find /dev/block/ -name proinfo 2>/dev/null | head -n 1)\n");
-                os.writeBytes("if [ ! -e \"$TARGET\" ]; then\n");
-                os.writeBytes("  echo \"NOT_FOUND\"\n");
-                os.writeBytes("else\n");
-                os.writeBytes("  echo \"PATH:$TARGET\"\n");
-                os.writeBytes("  dd if=\"$TARGET\" bs=20 count=1 2>/dev/null | xxd -p | head -n 1\n");
-                os.writeBytes("fi\n");
-                os.writeBytes("exit\n");
-                os.flush();
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(suProcess.getInputStream()));
-                String line;
-                String hexLine = null;
-
-                while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("PATH:")) {
-                        detectedPath = line.substring(5).trim();
-                    } else if (!line.equals("NOT_FOUND") && !line.startsWith("PATH:")) {
-                        hexLine = line;
-                    }
-                }
-                suProcess.waitFor();
-
-                if (detectedPath.isEmpty()) {
+                if (detectedPath == null || detectedPath.trim().isEmpty()) {
                     resultText.append("Proinfo partition not found.");
                 } else {
                     isPartitionLocated = true;
-                    activePartitionPath = detectedPath;
+                    activePartitionPath = detectedPath.trim();
 
-                    if (hexLine != null && !hexLine.trim().isEmpty()) {
-                        byte[] bytes = hexStringToByteArray(hexLine.trim());
-                        String rawString = new String(bytes, StandardCharsets.UTF_8);
+                    // 2. Čitanje bajtova direktno u Java stream (ne zavisi od xxd alata)
+                    Process ddProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", "dd if='" + activePartitionPath + "' bs=20 count=1"});
+                    InputStream is = ddProcess.getInputStream();
 
+                    byte[] buffer = new byte[20];
+                    int bytesRead = 0;
+                    int read;
+                    while (bytesRead < 20 && (read = is.read(buffer, bytesRead, 20 - bytesRead)) != -1) {
+                        bytesRead += read;
+                    }
+                    ddProcess.waitFor();
+
+                    if (bytesRead > 0) {
+                        String rawString = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
                         serialNumber = trimRight(rawString);
 
                         if (serialNumber.length() >= 5 && serialNumber.matches("^[a-zA-Z0-9]+$")) {
@@ -183,8 +172,7 @@ public class MainActivity extends AppCompatActivity {
                             resultText.append("Valid serial number found!\n")
                                       .append("Serial Number: ").append(serialNumber);
                         } else {
-                            resultText.append("Valid serial number not found.\n")
-                                      .append("Raw Hex: ").append(hexLine.trim());
+                            resultText.append("Valid serial number not found.");
                         }
                     } else {
                         resultText.append("Valid serial number not found (Empty response).");
@@ -238,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
             StringBuilder resultText = new StringBuilder();
             try {
                 String ddCommand = "dd of='" + activePartitionPath + "' bs=20 count=1 seek=0\n";
-                
+
                 Process suProcess = Runtime.getRuntime().exec(new String[]{"su", "-c", ddCommand});
                 OutputStream os = suProcess.getOutputStream();
 
@@ -279,15 +267,5 @@ public class MainActivity extends AppCompatActivity {
             i--;
         }
         return input.substring(0, i + 1);
-    }
-
-    private byte[] hexStringToByteArray(String s) {
-        int len = s.length();
-        byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                                 + Character.digit(s.charAt(i + 1), 16));
-        }
-        return data;
     }
 }
